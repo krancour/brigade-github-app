@@ -81,7 +81,7 @@ test:
 # Build / Publish                                                              #
 ################################################################################
 
-IMAGES = brigade-github-app brigade-github-check-run
+IMAGES = brigade-github-app
 
 .PHONY: build
 build: build-all-images
