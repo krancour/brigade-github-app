@@ -17,7 +17,7 @@ import (
 	"github.com/google/go-github/v32/github"
 	gin "gopkg.in/gin-gonic/gin.v1"
 
-	ghlib "github.com/brigadecore/brigade-github-app/pkg/github"
+	ghlib "github.com/brigadecore/brigade-github-app/v2/internal/github"
 )
 
 const hubSignatureHeader = "X-Hub-Signature"

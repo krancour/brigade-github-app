@@ -1,4 +1,4 @@
-module github.com/brigadecore/brigade-github-app
+module github.com/brigadecore/brigade-github-app/v2
 
 go 1.15
 

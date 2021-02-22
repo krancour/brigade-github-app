@@ -15,7 +15,7 @@ import (
 
 	"github.com/brigadecore/brigade/pkg/storage/kube"
 
-	"github.com/brigadecore/brigade-github-app/pkg/webhook"
+	"github.com/brigadecore/brigade-github-app/v2/internal/webhook"
 )
 
 var (
