@@ -1,0 +1,12 @@
+apiVersion: v2
+name: brigade-github-app
+description: |
+  The Brigade GitHub App, an advanced gateway for GitHub
+type: application
+version: 0.1.0
+appVersion: v0.1.0
+sources:
+- https://github.com/brigadecore/brigade-github-app
+maintainers:
+- name: The Brigade Maintainers
+  email: cncf-brigade-maintainers@lists.cncf.io
