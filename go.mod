@@ -1,6 +1,6 @@
 module github.com/brigadecore/brigade-github-app
 
-go 1.14
+go 1.15
 
 replace k8s.io/client-go => k8s.io/client-go v0.18.2
 

@@ -22,9 +22,7 @@ BASE_PACKAGE_NAME := github.com/brigadecore/brigade-github-app
 
 ifneq ($(SKIP_DOCKER),true)
 	PROJECT_ROOT := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
-	# https://github.com/krancour/go-tools
-	# https://hub.docker.com/repository/docker/krancour/go-tools
-	DEV_IMAGE := krancour/go-tools:v0.1.0
+	DEV_IMAGE := brigadecore/go-tools:v0.1.0
 	DOCKER_CMD := docker run \
 		-it \
 		--rm \
