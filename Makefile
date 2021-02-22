@@ -65,19 +65,9 @@ redeploy:
 	sleep 20
 	kubectl logs -f `kubectl get po -l app=github-app-test-brigade-github-app -o name | tail -n 1 | sed 's/pod\///'`
 
-.PHONY: resolve-dependencies
-resolve-dependencies:
-	$(DOCKER_CMD) sh -c 'go mod tidy && go mod vendor'
-
 ################################################################################
 # Tests                                                                        #
 ################################################################################
-
-# Verifies there are no discrepancies between desired dependencies and the
-# tracked, vendored dependencies
-.PHONY: verify-vendored-code
-verify-vendored-code:
-	$(DOCKER_CMD) go mod verify
 
 .PHONY: lint
 lint:

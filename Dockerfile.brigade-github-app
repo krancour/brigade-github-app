@@ -3,7 +3,6 @@ ENV CGO_ENABLED=0
 WORKDIR /go/src/github.com/brigadecore/brigade-github-app
 COPY cmd/github-gateway cmd/github-gateway
 COPY pkg/ pkg/
-COPY vendor/ vendor/
 RUN go build -o bin/github-gateway ./cmd/github-gateway
 
 FROM scratch

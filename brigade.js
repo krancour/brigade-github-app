@@ -56,7 +56,7 @@ function test() {
   // Run Go unit tests
   job.tasks = [
     `cd ${localPath}`,
-    "make verify-vendored-code lint test"
+    "make lint test"
   ];
   return job;
 }

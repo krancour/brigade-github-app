@@ -3,7 +3,6 @@ ENV CGO_ENABLED=0
 WORKDIR /go/src/github.com/brigadecore/brigade-github-app
 COPY cmd/check-run cmd/check-run
 COPY pkg/ pkg/
-COPY vendor/ vendor/
 RUN go build -o bin/check-run ./cmd/check-run
 
 FROM scratch
