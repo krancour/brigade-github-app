@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/brigadecore/brigade/pkg/storage/kube"
+	"github.com/brigadecore/brigade/sdk/v2/core"
 
 	"github.com/brigadecore/brigade-github-app/v2/internal/webhook"
 )
@@ -118,6 +119,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Brigade Events API client
+	var eventsClient core.EventsClient
+	{
+		address, token, opts, err := apiClientConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+		eventsClient = core.NewEventsClient(address, token, &opts)
+	}
+
 	store := kube.New(clientset, namespace)
 
 	router := gin.New()
@@ -126,8 +137,26 @@ func main() {
 	events := router.Group("/events")
 	{
 		events.Use(gin.Logger())
-		events.POST("/github", webhook.NewGithubHookHandler(store, allowedAuthors, key, ghOpts))
-		events.POST("/github/:app/:inst", webhook.NewGithubHookHandler(store, allowedAuthors, key, ghOpts))
+		events.POST(
+			"/github",
+			webhook.NewGithubHookHandler(
+				eventsClient,
+				store,
+				allowedAuthors,
+				key,
+				ghOpts,
+			),
+		)
+		events.POST(
+			"/github/:app/:inst",
+			webhook.NewGithubHookHandler(
+				eventsClient,
+				store,
+				allowedAuthors,
+				key,
+				ghOpts,
+			),
+		)
 	}
 
 	router.GET("/healthz", healthz)

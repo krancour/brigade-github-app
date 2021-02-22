@@ -14,6 +14,7 @@ import (
 
 	"github.com/brigadecore/brigade/pkg/brigade"
 	"github.com/brigadecore/brigade/pkg/storage"
+	"github.com/brigadecore/brigade/sdk/v2/core"
 	"github.com/google/go-github/v32/github"
 	gin "gopkg.in/gin-gonic/gin.v1"
 
@@ -33,6 +34,7 @@ var (
 )
 
 type githubHook struct {
+	eventsClient            core.EventsClient
 	store                   storage.Store
 	updateIssueCommentEvent iceUpdater
 	opts                    GithubOpts
@@ -53,8 +55,15 @@ type GithubOpts struct {
 type iceUpdater func(c *gin.Context, s *githubHook, ice *github.IssueCommentEvent, rev brigade.Revision, proj *brigade.Project, body []byte) (brigade.Revision, []byte)
 
 // NewGithubHookHandler creates a GitHub webhook handler.
-func NewGithubHookHandler(s storage.Store, authors []string, x509Key []byte, opts GithubOpts) gin.HandlerFunc {
+func NewGithubHookHandler(
+	eventsClient core.EventsClient,
+	s storage.Store,
+	authors []string,
+	x509Key []byte,
+	opts GithubOpts,
+) gin.HandlerFunc {
 	gh := &githubHook{
+		eventsClient:            eventsClient,
 		store:                   s,
 		updateIssueCommentEvent: updateIssueCommentEvent,
 		allowedAuthors:          authors,
