@@ -4,7 +4,11 @@ import (
 	"os"
 	"testing"
 
+	serverRM "github.com/brigadecore/brigade-github-app/v2/gateway/internal/lib/restmachinery"
+	"github.com/brigadecore/brigade-github-app/v2/gateway/internal/webhooks"
+	"github.com/brigadecore/brigade-github-app/v2/gateway/internal/webhooks/rest"
 	"github.com/brigadecore/brigade/sdk/v2/restmachinery"
+	clientRM "github.com/brigadecore/brigade/sdk/v2/restmachinery"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +24,7 @@ func TestAPIClientConfig(t *testing.T) {
 		assertions func(
 			address string,
 			token string,
-			opts restmachinery.APIClientOptions,
+			opts clientRM.APIClientOptions,
 			err error,
 		)
 	}{
@@ -30,7 +34,7 @@ func TestAPIClientConfig(t *testing.T) {
 			assertions: func(
 				_ string,
 				_ string,
-				_ restmachinery.APIClientOptions,
+				_ clientRM.APIClientOptions,
 				err error,
 			) {
 				require.Error(t, err)
@@ -78,6 +82,201 @@ func TestAPIClientConfig(t *testing.T) {
 			testCase.setup()
 			address, token, opts, err := apiClientConfig()
 			testCase.assertions(address, token, opts, err)
+		})
+	}
+}
+
+func TestWebHookServiceConfig(t *testing.T) {
+	testCases := []struct {
+		name       string
+		setup      func()
+		assertions func(webhooks.ServiceConfig)
+	}{
+		{
+			name: "ALLOWED_AUTHORS not defined",
+			assertions: func(config webhooks.ServiceConfig) {
+				require.Equal(
+					t,
+					[]string{"COLLABORATOR", "OWNER", "MEMBER"},
+					config.AllowedAuthors,
+				)
+			},
+		},
+		{
+			name: "ALLOWED_AUTHORS defined",
+			setup: func() {
+				os.Setenv("ALLOWED_AUTHORS", "FOO,BAR")
+			},
+			assertions: func(config webhooks.ServiceConfig) {
+				require.Equal(
+					t,
+					[]string{"FOO", "BAR"},
+					config.AllowedAuthors,
+				)
+			},
+		},
+		{
+			name: "EMITTED_EVENTS not defined",
+			assertions: func(config webhooks.ServiceConfig) {
+				require.Equal(
+					t,
+					[]string{"*"},
+					config.EmittedEvents,
+				)
+			},
+		},
+		{
+			name: "EMITTED_EVENTS defined",
+			setup: func() {
+				os.Setenv("EMITTED_EVENTS", "FOO,BAR")
+			},
+			assertions: func(config webhooks.ServiceConfig) {
+				require.Equal(
+					t,
+					[]string{"FOO", "BAR"},
+					config.EmittedEvents,
+				)
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.setup != nil {
+				testCase.setup()
+			}
+			testCase.assertions(webhookServiceConfig())
+		})
+	}
+}
+
+func TestAuthFilterConfig(t *testing.T) {
+	testCases := []struct {
+		name       string
+		setup      func()
+		assertions func(serverRM.ServerConfig, error)
+	}{
+		{
+			name: "GITHUB_APP_ID not set",
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "value not found for")
+				require.Contains(t, err.Error(), "GITHUB_APP_ID")
+			},
+		},
+		{
+			name: "GITHUB_APP_SHARED_SECRET not set",
+			setup: func() {
+				os.Setenv("GITHUB_APP_ID", "123456789")
+			},
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "value not found for")
+				require.Contains(t, err.Error(), "GITHUB_APP_SHARED_SECRET")
+			},
+		},
+		{
+			name: "success",
+			setup: func() {
+				os.Setenv("GITHUB_APP_SHARED_SECRET", "abcdefghijklmnopqrstuvwxyz")
+			},
+			assertions: func(config serverRM.ServerConfig, err error) {
+				require.NoError(t, err)
+				require.Equal(
+					t,
+					rest.AuthFilterConfig{
+						AppID:        "123456789",
+						SharedSecret: "abcdefghijklmnopqrstuvwxyz",
+					},
+					config,
+				)
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testCase.setup()
+			config, err := serverConfig()
+			testCase.assertions(config, err)
+		})
+	}
+}
+
+func TestServerConfig(t *testing.T) {
+	testCases := []struct {
+		name       string
+		setup      func()
+		assertions func(serverRM.ServerConfig, error)
+	}{
+		{
+			name: "GATEWAY_SERVER_PORT not parsable as int",
+			setup: func() {
+				os.Setenv("GATEWAY_SERVER_PORT", "foo")
+			},
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "was not parsable as an int")
+				require.Contains(t, err.Error(), "GATEWAY_SERVER_PORT")
+			},
+		},
+		{
+			name: "TLS_ENABLED not parsable as bool",
+			setup: func() {
+				os.Setenv("GATEWAY_SERVER_PORT", "8080")
+				os.Setenv("TLS_ENABLED", "nope")
+			},
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "was not parsable as a bool")
+				require.Contains(t, err.Error(), "TLS_ENABLED")
+			},
+		},
+		{
+			name: "TLS_CERT_PATH required but not set",
+			setup: func() {
+				os.Setenv("TLS_ENABLED", "true")
+			},
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "value not found for")
+				require.Contains(t, err.Error(), "TLS_CERT_PATH")
+			},
+		},
+		{
+			name: "TLS_KEY_PATH required but not set",
+			setup: func() {
+				os.Setenv("TLS_CERT_PATH", "/var/ssl/cert")
+			},
+			assertions: func(_ serverRM.ServerConfig, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "value not found for")
+				require.Contains(t, err.Error(), "TLS_KEY_PATH")
+			},
+		},
+		{
+			name: "success",
+			setup: func() {
+				os.Setenv("TLS_KEY_PATH", "/var/ssl/key")
+			},
+			assertions: func(config serverRM.ServerConfig, err error) {
+				require.NoError(t, err)
+				require.Equal(
+					t,
+					serverRM.ServerConfig{
+						Port:        8080,
+						TLSEnabled:  true,
+						TLSCertPath: "/var/ssl/cert",
+						TLSKeyPath:  "/var/ssl/key",
+					},
+					config,
+				)
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testCase.setup()
+			config, err := serverConfig()
+			testCase.assertions(config, err)
 		})
 	}
 }

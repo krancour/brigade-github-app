@@ -1,210 +1,51 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
 
-	gin "gopkg.in/gin-gonic/gin.v1"
-	v1 "k8s.io/api/core/v1"
-
-	"github.com/brigadecore/brigade/pkg/storage/kube"
+	"github.com/brigadecore/brigade-github-app/v2/gateway/internal/lib/restmachinery"
+	"github.com/brigadecore/brigade-github-app/v2/gateway/internal/webhooks"
+	"github.com/brigadecore/brigade-github-app/v2/gateway/internal/webhooks/rest"
+	"github.com/brigadecore/brigade-github-app/v2/internal/signals"
+	"github.com/brigadecore/brigade-github-app/v2/internal/version"
 	"github.com/brigadecore/brigade/sdk/v2/core"
-
-	"github.com/brigadecore/brigade-github-app/v2/internal/webhook"
 )
-
-var (
-	kubeconfig     string
-	master         string
-	namespace      string
-	gatewayPort    string
-	keyFile        string
-	allowedAuthors authors
-	emittedEvents  events
-)
-
-// defaultAllowedAuthors is the default set of authors allowed to PR
-// https://developer.github.com/v4/reference/enum/commentauthorassociation/
-var defaultAllowedAuthors = []string{"COLLABORATOR", "OWNER", "MEMBER"}
-
-// defaultEmittedEvents is the default set of events to be emitted by the gateway
-var defaultEmittedEvents = []string{"*"}
-
-func init() {
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&master, "master", "", "master url")
-	flag.StringVar(&namespace, "namespace", defaultNamespace(), "kubernetes namespace")
-	flag.StringVar(&gatewayPort, "gateway-port", defaultGatewayPort(), "TCP port to use for brigade-github-gateway")
-	flag.StringVar(&keyFile, "key-file", "/etc/brigade-github-app/key.pem", "path to x509 key for GitHub app")
-	flag.Var(&allowedAuthors, "authors", "allowed author associations, separated by commas (COLLABORATOR, CONTRIBUTOR, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR, MEMBER, OWNER, NONE)")
-	flag.Var(&emittedEvents, "events", "events to be emitted and passed to worker, separated by commas (defaults to `*`, which matches everything)")
-}
 
 func main() {
-	flag.Parse()
 
-	if len(keyFile) == 0 {
-		log.Fatal("Key file is required")
-		os.Exit(1)
-	}
+	log.Printf(
+		"Starting Brigade GitHub App -- version %s -- commit %s",
+		version.Version(),
+		version.Commit(),
+	)
 
-	key, err := ioutil.ReadFile(keyFile)
-	if err != nil {
-		log.Fatalf("could not load key from %q: %s", keyFile, err)
-		os.Exit(1)
-	}
-
-	if len(allowedAuthors) == 0 {
-		if aa, ok := os.LookupEnv("BRIGADE_AUTHORS"); ok {
-			(&allowedAuthors).Set(aa)
-		} else {
-			allowedAuthors = defaultAllowedAuthors
-		}
-	}
-
-	if len(allowedAuthors) > 0 {
-		log.Printf("Forked PRs will be built for roles %s", strings.Join(allowedAuthors, " | "))
-	}
-
-	if len(emittedEvents) == 0 {
-		if ee, ok := os.LookupEnv("BRIGADE_EVENTS"); ok {
-			(&emittedEvents).Set(ee)
-		} else {
-			emittedEvents = defaultEmittedEvents
-		}
-	}
-
-	envOrBool := func(env string, defaultVal bool) bool {
-		s, ok := os.LookupEnv(env)
-		if !ok {
-			return defaultVal
-		}
-
-		realVal, err := strconv.ParseBool(s)
-		if err != nil {
-			return defaultVal
-		}
-
-		return realVal
-	}
-
-	envOrInt := func(env string, defaultVal int) int {
-		aa, ok := os.LookupEnv(env)
-		if !ok {
-			return defaultVal
-		}
-
-		realVal, err := strconv.Atoi(aa)
-		if err != nil {
-			return defaultVal
-		}
-		return realVal
-	}
-
-	ghOpts := webhook.GithubOpts{
-		CheckSuiteOnPR:      envOrBool("CHECK_SUITE_ON_PR", true),
-		AppID:               envOrInt("APP_ID", 0),
-		DefaultSharedSecret: os.Getenv("DEFAULT_SHARED_SECRET"),
-		EmittedEvents:       emittedEvents,
-	}
-
-	clientset, err := kube.GetClient(master, kubeconfig)
+	address, token, opts, err := apiClientConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Brigade Events API client
-	var eventsClient core.EventsClient
-	{
-		address, token, opts, err := apiClientConfig()
-		if err != nil {
-			log.Fatal(err)
-		}
-		eventsClient = core.NewEventsClient(address, token, &opts)
+	authFilterConfig, err := authFilterConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	store := kube.New(clientset, namespace)
-
-	router := gin.New()
-	router.Use(gin.Recovery())
-
-	events := router.Group("/events")
-	{
-		events.Use(gin.Logger())
-		events.POST(
-			"/github",
-			webhook.NewGithubHookHandler(
-				eventsClient,
-				store,
-				allowedAuthors,
-				key,
-				ghOpts,
-			),
-		)
-		events.POST(
-			"/github/:app/:inst",
-			webhook.NewGithubHookHandler(
-				eventsClient,
-				store,
-				allowedAuthors,
-				key,
-				ghOpts,
-			),
-		)
+	serverConfig, err := serverConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	router.GET("/healthz", healthz)
-
-	formattedGatewayPort := fmt.Sprintf(":%v", gatewayPort)
-	router.Run(formattedGatewayPort)
-}
-
-func defaultNamespace() string {
-	if ns, ok := os.LookupEnv("BRIGADE_NAMESPACE"); ok {
-		return ns
-	}
-	return v1.NamespaceDefault
-}
-
-func defaultGatewayPort() string {
-	if port, ok := os.LookupEnv("BRIGADE_GATEWAY_PORT"); ok {
-		return port
-	}
-	return "7746"
-}
-
-func healthz(c *gin.Context) {
-	c.String(http.StatusOK, http.StatusText(http.StatusOK))
-}
-
-type authors []string
-
-func (a *authors) Set(value string) error {
-	for _, aa := range strings.Split(value, ",") {
-		*a = append(*a, strings.ToUpper(aa))
-	}
-	return nil
-}
-
-func (a *authors) String() string {
-	return strings.Join(*a, ",")
-}
-
-type events []string
-
-func (a *events) Set(value string) error {
-	for _, aa := range strings.Split(value, ",") {
-		*a = append(*a, aa)
-	}
-	return nil
-}
-
-func (a *events) String() string {
-	return strings.Join(*a, ",")
+	log.Println(
+		restmachinery.NewServer(
+			[]restmachinery.Endpoints{
+				&rest.WebhookEndpoints{
+					AuthFilter: rest.NewAuthFilter(authFilterConfig),
+					Service: webhooks.NewService(
+						core.NewEventsClient(address, token, &opts),
+						webhookServiceConfig(),
+					),
+				},
+			},
+			&serverConfig,
+		).ListenAndServe(signals.Context()),
+	)
 }
